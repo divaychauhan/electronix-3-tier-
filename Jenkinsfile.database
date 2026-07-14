@@ -9,23 +9,23 @@ pipeline {
                 sh 'python3 scripts/create_db.py'
             }
         }
-    }
 
-     
-        stage('smoke test') {
+        stage('Smoke Test') {
             steps {
-                sh 'python3 scripts/create_db.py'
+                sh 'python3 scripts/smoke_test.py'
+                // Ya agar same script chalani hai to:
+                // sh 'python3 scripts/create_db.py'
             }
-        
+        }
     }
 
     post {
         success {
-            echo 'Database creation successful and smoke test  ✅'
+            echo 'Database creation successful and smoke test passed ✅'
         }
 
         failure {
-            echo 'Database creation failed ❌'
+            echo 'Database creation or smoke test failed ❌'
         }
     }
 }
