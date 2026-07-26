@@ -1,64 +1,94 @@
-pipeline{
-    agent {label 'electronix'}
+pipeline {
+    agent { label 'electronix' }
 
     environment {
-        ECR_REPO='387385940921.dkr.ecr.us-east-1.amazonaws.com/electronix-ecr'
-        AWS_REGION = "us-east-1"
-        PRODUCTION_IP='107.23.180.19'
+        ECR_REPO      = "387385940921.dkr.ecr.us-east-1.amazonaws.com/electronix-ecr"
+        AWS_REGION    = "us-east-1"
+        PRODUCTION_IP = "107.23.180.19"
     }
 
-    stages{
+    stages {
 
-            stage('Build Docker Image'){
-                steps{
-                    dir("backend"){
-                        sh 'sudo docker build -t electronix-backend:${BUILD_NUMBER} .'
-                    }
-                }
-            }
-
-            stage("Test ECR Login"){
-                steps {
+        stage('Build Docker Image') {
+            steps {
+                dir('backend') {
                     sh '''
-                    aws ecr get-login-password --region ${AWS_REGION} | sudo docker login --username AWS --password-stdin ${ECR_REPO}
+                    sudo docker build -t electronix-backend:${BUILD_NUMBER} .
                     '''
                 }
             }
+        }
 
-            stage ("Tag & Push to ECR"){
-                steps{
-                    sh '''
-                    sudo docker tag electronix-backend:${BUILD_NUMBER} ${ECR_REPO}:${BUILD_NUMBER}
-                    sudo docker tag electronix-backend:${BUILD_NUMBER} ${ECR_REPO}:latest
-                    sudo docker push ${ECR_REPO}:${BUILD_NUMBER}
-                    sudo docker push ${ECR_REPO}:latest
+        stage('Login to Amazon ECR') {
+            steps {
+                sh '''
+                aws ecr get-login-password --region ${AWS_REGION} | \
+                sudo docker login --username AWS --password-stdin 387385940921.dkr.ecr.us-east-1.amazonaws.com
+                '''
+            }
+        }
 
-                    echo "Pushed Success ✅"
-                    '''
+        stage('Tag Docker Image') {
+            steps {
+                sh '''
+                sudo docker tag electronix-backend:${BUILD_NUMBER} ${ECR_REPO}:${BUILD_NUMBER}
+                sudo docker tag electronix-backend:${BUILD_NUMBER} ${ECR_REPO}:latest
+                '''
+            }
+        }
+
+        stage('Push Image to ECR') {
+            steps {
+                sh '''
+                sudo docker push ${ECR_REPO}:${BUILD_NUMBER}
+                sudo docker push ${ECR_REPO}:latest
+                '''
+            }
+        }
+
+        stage('Deploy to Production') {
+            steps {
+                sshagent(credentials: ['prod-server-ssh-key']) {
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ubuntu@${PRODUCTION_IP} << EOF
+
+                    set -e
+
+                    echo "Connected to Production Server"
+
+                    aws ecr get-login-password --region ${AWS_REGION} | \
+                    sudo docker login --username AWS --password-stdin 387385940921.dkr.ecr.us-east-1.amazonaws.com
+
+                    cd /home/ubuntu/electronix-prod
+
+                    sudo docker compose pull
+
+                    sudo docker compose down
+
+                    sudo docker compose up -d
+
+                    sudo docker image prune -f
+
+                    echo "Deployment Completed Successfully"
+
+                    EOF
+                    """
                 }
             }
-
-              stage ("Deploy To Production"){
-                steps{
-                    sshagent(['prod-server-ssh-key']){
-                    sh '''
-                    ssh -o StrictHostKeyChecking=no ubuntu@${PRODUCTION_IP} "echo Connection Success"
-                    '''
-                    }
-                    
-                }
-            }
-}
-
-
-  post {
-    success{
-        echo "ECR login success ✅"
+        }
     }
 
-    failure {
-        echo "ECR login Failed ❌"
-    }
-  }
+    post {
+        success {
+            echo 'Application deployed successfully.'
+        }
 
+        failure {
+            echo 'Deployment failed.'
+        }
+
+        always {
+            cleanWs()
+        }
+    }
 }
