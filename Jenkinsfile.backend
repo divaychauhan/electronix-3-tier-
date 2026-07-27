@@ -36,6 +36,8 @@ pipeline {
 
                 sudo docker push ${ECR_REPO}:${BUILD_NUMBER}
                 sudo docker push ${ECR_REPO}:latest
+
+                echo "Image pushed successfully"
                 '''
             }
         }
@@ -44,17 +46,15 @@ pipeline {
             steps {
                 sshagent(['prod-server-ssh-key']) {
 
-                    sh '''
-                    ssh -o StrictHostKeyChecking=no ubuntu@${PRODUCTION_IP} << 'EOF'
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ubuntu@${PRODUCTION_IP} '
 
                     set -e
 
-                    aws ecr get-login-password --region us-east-1 | \
-                    sudo docker login \
-                    --username AWS \
-                    --password-stdin 387385940921.dkr.ecr.us-east-1.amazonaws.com
+                    aws ecr get-login-password --region ${AWS_REGION} | \
+                    sudo docker login --username AWS --password-stdin ${ECR_REPO}
 
-                    sudo docker pull 387385940921.dkr.ecr.us-east-1.amazonaws.com/electronix-ecr:latest
+                    sudo docker pull ${ECR_REPO}:latest
 
                     sudo docker stop electronix-backend || true
                     sudo docker rm electronix-backend || true
@@ -66,40 +66,47 @@ pipeline {
                         --restart unless-stopped \
                         --env-file /home/ubuntu/.env \
                         -p 5000:5000 \
-                        387385940921.dkr.ecr.us-east-1.amazonaws.com/electronix-ecr:latest
+                        ${ECR_REPO}:latest
 
-                    EOF
-                    '''
+                    '
+                    """
                 }
             }
         }
 
         stage('Health Check') {
             steps {
-                sh '''
-                ssh -o StrictHostKeyChecking=no ubuntu@${PRODUCTION_IP} << 'EOF'
+                sshagent(['prod-server-ssh-key']) {
 
-                for i in {1..12}
-                do
-                    STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/api/health || true)
-
-                    if [ "$STATUS" = "200" ]; then
-                        echo "Application is Healthy"
-                        exit 0
-                    fi
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ubuntu@${PRODUCTION_IP} '
 
                     echo "Waiting for application..."
-                    sleep 5
-                done
 
-                echo "Health Check Failed"
+                    for i in {1..12}
+                    do
 
-                sudo docker logs electronix-backend
+                        STATUS=\$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/api/health || true)
 
-                exit 1
+                        if [ "\$STATUS" = "200" ]
+                        then
+                            echo "Application is Healthy"
+                            exit 0
+                        fi
 
-                EOF
-                '''
+                        sleep 5
+
+                    done
+
+                    echo "Health Check Failed"
+
+                    sudo docker logs electronix-backend
+
+                    exit 1
+
+                    '
+                    """
+                }
             }
         }
 
@@ -108,16 +115,15 @@ pipeline {
     post {
 
         success {
-            echo "Deployment Successful"
+            echo 'Deployment Successful'
         }
 
         failure {
-            echo "Deployment Failed"
+            echo 'Deployment Failed'
         }
 
         always {
             cleanWs()
         }
-
     }
 }
