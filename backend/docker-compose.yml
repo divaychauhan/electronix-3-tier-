@@ -1,6 +1,7 @@
 services:
   backend:
     image: 387385940921.dkr.ecr.us-east-1.amazonaws.com/electronix-ecr:latest
+    container_name: electronix-backend
     ports:
       - "5000:5000"
     env_file:
