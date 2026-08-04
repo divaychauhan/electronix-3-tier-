@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: frontend
+  namespace: electronix
+
+spec:
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: frontend
+
+  template:
+    metadata:
+      labels:
+        app: frontend
+
+    spec:
+      nodeSelector:
+        for: application
+
+      containers:
+      - name: frontend
+
+        image: divaypratap/electronix-frontend:v1
+
+        ports:
+        - containerPort: 80
